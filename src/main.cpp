@@ -1,8 +1,7 @@
 #include <ArduinoJson.h>
 #include <AsyncMqttClient.h>
-#include <EEPROM.h>
+// #include <EEPROM.h>
 #include <ESP8266WiFi.h>
-#include <FastLED.h>
 #include <Ticker.h>
 
 #define WIFI_SSID "Solomaha_2"
@@ -28,33 +27,100 @@ unsigned int red = 0;
 unsigned int green = 0;
 unsigned int blue = 0;
 
-uint8_t rainbow = 0;
+int rainbow = 0;
 
 struct {
   unsigned int mode = 0;  // 0 for static color, 1 for rainbow
   unsigned int red = 0;
   unsigned int green = 0;
   unsigned int blue = 0;
+  unsigned int speed = 0;
+  unsigned int brightness = 0;
 } config;
 
-void rainbowTick() {
-  const CRGB& rgb = CHSV(rainbow, 255, 255);
+typedef struct {
+  int r;
+  int g;
+  int b;
+} rgb;
 
-  analogWrite(redPin, rgb.r);
-  analogWrite(greenPin, rgb.g);
-  analogWrite(bluePin, rgb.b);
+rgb hsv2rgb(int h) {
+  double hh, p, q, t, ff;
+  long i;
+  rgb out;
 
-  rainbow++;
+  hh = h / 240.0;
+  i = (long)hh;
+  ff = hh - i;
+  p = 0;
+  q = (1.0 - (1.0 * ff));
+  t = ff;
+
+  switch (i) {
+    case 0:
+      out.r = 1023;
+      out.g = (int)(t * 1023);
+      out.b = (int)(p * 1023);
+      break;
+    case 1:
+      out.r = (int)(q * 1023);
+      out.g = 1023;
+      out.b = (int)(p * 1023);
+      break;
+    case 2:
+      out.r = (int)(p * 1023);
+      out.g = 1023;
+      out.b = (int)(t * 1023);
+      break;
+
+    case 3:
+      out.r = (int)(p * 1023);
+      out.g = (int)(q * 1023);
+      out.b = 1023;
+      break;
+    case 4:
+      out.r = (int)(t * 1023);
+      out.g = (int)(p * 1023);
+      out.b = 1023;
+      break;
+    case 5:
+    default:
+      out.r = 1023;
+      out.g = (int)(p * 1023);
+      out.b = (int)(q * 1023);
+      break;
+  }
+  return out;
+}
+
+void rainbowTick(int brightness) {
+  rgb color = hsv2rgb(rainbow);
+
+  double ratio = brightness / 100.0;
+
+  int red = color.r * ratio;
+  int green = color.g * ratio;
+  int blue = color.b * ratio;
+
+  analogWrite(redPin, red);
+  analogWrite(greenPin, green);
+  analogWrite(bluePin, blue);
+
+  if (rainbow == 1439) {
+    rainbow = 0;
+  } else {
+    rainbow++;
+  }
 }
 
 void stopRainbow() {
-  rainbow = 0;
+  // rainbow = 0;
   rainbowTimer.detach();
 }
 
-void startRainbow(unsigned int speed) {
+void startRainbow(int speed, int brightness) {
   stopRainbow();
-  rainbowTimer.attach_ms((20 - speed) * 10, rainbowTick);
+  rainbowTimer.attach_ms(speed, rainbowTick, brightness);
 }
 
 void connectToWifi() {
@@ -83,14 +149,17 @@ void onMqttConnect(bool sessionPresent) {
   Serial.println("Connected to MQTT.");
 
   // Subscribe
-  mqttClient.subscribe("rgb/my-room_rgb/set", 0);
+  mqttClient.subscribe("rgb/room1-rgb/set", 0);
+  mqttClient.subscribe("devices/room1-rgb", 0);
 
   // Send initial state
   String sendPayload = "{\"mode\":" + String(config.mode) +
                        ",\"red\":" + String(config.red) +
                        ",\"green\":" + String(config.green) +
+                       ",\"speed\":" + String(config.speed) +
+                       ",\"brightness\":" + String(config.brightness) +
                        ",\"blue\":" + String(config.blue) + "}";
-  mqttClient.publish("rgb/my-room_rgb", 0, false, sendPayload.c_str());
+  mqttClient.publish("rgb/room1-rgb", 0, false, sendPayload.c_str());
 }
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
@@ -123,14 +192,20 @@ void onMqttMessage(char* topic, char* payload,
     analogWrite(greenPin, green);
     analogWrite(bluePin, blue);
 
-    String sendPayload = "{\"mode\":" + String(config.mode) +
-                         ",\"red\":" + String(config.red) +
+    String sendPayload = "{\"mode\":0,\"red\":" + String(config.red) +
                          ",\"green\":" + String(config.green) +
                          ",\"blue\":" + String(config.blue) + "}";
-    mqttClient.publish("rgb/my-room_rgb", 0, false, sendPayload.c_str());
+    mqttClient.publish("rgb/room1-rgb", 0, false, sendPayload.c_str());
   } else if (root["mode"] == 1) {
     config.mode = 1;
-    startRainbow(root["speed"]);
+    config.speed = root["speed"];
+    config.brightness = root["brightness"];
+
+    startRainbow(config.speed, config.brightness);
+
+    String sendPayload = "{\"mode\":1,\"speed\":" + String(config.speed) +
+                         ",\"brightness\":" + String(config.brightness) + "}";
+    mqttClient.publish("rgb/room1-rgb", 0, false, sendPayload.c_str());
   }
 }
 
@@ -150,6 +225,8 @@ void setup() {
   mqttClient.onDisconnect(onMqttDisconnect);
   mqttClient.onMessage(onMqttMessage);
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
+  mqttClient.setClientId("room1-rgb");
+  mqttClient.setCredentials("1", "fdkhjsdfhjkhjkfsdjkldfshjklsjyghfhfgfd");
 
   connectToWifi();
 
