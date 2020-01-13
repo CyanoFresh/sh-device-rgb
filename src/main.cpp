@@ -4,10 +4,10 @@
 #include <ESP8266WiFi.h>
 #include <Ticker.h>
 
-#define WIFI_SSID "Solomaha_2"
+#define WIFI_SSID "Solomaha"
 #define WIFI_PASSWORD "solomakha21"
 
-#define MQTT_HOST IPAddress(192, 168, 1, 76)
+#define MQTT_HOST IPAddress(192, 168, 1, 230)
 #define MQTT_PORT 1883
 
 AsyncMqttClient mqttClient;
@@ -226,7 +226,7 @@ void setup() {
   mqttClient.onMessage(onMqttMessage);
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setClientId("room1-rgb");
-  mqttClient.setCredentials("1", "fdkhjsdfhjkhjkfsdjkldfshjklsjyghfhfgfd");
+  mqttClient.setCredentials("device", "fdkhjsdfhjkhjkfsdjkldfshjklsjyghfhfgfd");
 
   connectToWifi();
 
